@@ -1,0 +1,126 @@
+ONLINE PAYMENT FRAUD DETECTIONPYTHON
+
+
+import pandas as pd 
+import numpy as np 
+import matplotlib.pyplot as plt 
+import seaborn as sns 
+%matplotlib inline 
+from plotly.offline 
+import init_notebook_mode, plot, iplot 
+import cufflinks as cf 
+init_notebook_mode(connected=True) 
+cf.go_offline() 
+import plotly.express as px 
+import plotly.io as pio pio.renderers.default= "colab"
+pio.templates.default = 'seaborn' 
+df = pd.read_csv(r'/content/online payment .csv') 
+df.info() 
+df.head(15) 
+df.describe() 
+df.isFraud.value_counts() 
+df.isFlaggedFraud.value_counts() 
+merged_df=pd.merge(df[df['isFraud']==1],df[df['isFlaggedFraud']==1],how='outer',indicator    
+= True) 
+common_rows = merged_df[merged_df['_merge'] == 'both'] 
+len(common_rows) 
+df.isnull().sum() 
+# Correlation between isFraud feature with other features 
+# df.corr(numeric_only=True)['isFraud'].sort_values(ascending=False)[1:].iplot(kind='bar') fig1=px.bar(x=df.corr(numeric_only=True)['isFraud'].sort_values(ascending=False)[1:].index, y=df.corr(numeric_only=True)['isFraud'].sort_values(ascending=False)[1:].values, color=df.corr(numeric_only=True)['isFraud'].sort_values(ascending=False)[1:].index, color_discrete_sequence=px.colors.sequential.Viridis_r, 
+text=df.corr(numeric_only=True)['isFraud'].sort_values(ascending=False)[1:].values,title='Target Feature (isFraud) Correlation Plot') fig1.update_xaxes(title_text='Features') fig1.update_yaxes(title_text='Correlation') 
+df.type.value_counts().sort_values() 
+# Transaction Type Distribution fig2 = px.pie(data_frame=df, values=df.type.value_counts().sort_values().values, names=df.type.value_counts().sort_values().index, 
+title='Distribution of Transaction Type', color=df.type.value_counts().sort_values().index, color_discrete_sequence=px.colors.sequential.Viridis_r, height=500) fig2 
+df['type'] = df['type'].map({'CASH_OUT':1, 'PAYMENT':2, 'CASH_IN': 3, 'TRANSFER': 4, 
+'DEBIT': 5}) 
+df['isFraud'] = df['isFraud'].map({0: 'No Fraud', 1: 'Fraud'}) 
+# df['isFlaggedFraud'] = df['isFlaggedFraud'].map({0: 'No Fraud', 1: 'Fraud'}) 
+df.drop(['nameOrig', 'nameDest'], axis=1, inplace=True) 
+df.head() 
+from sklearn.model_selection import train_test_split 
+current_ratio = df.isFraud.value_counts(normalize=True) current_ratio 
+new_df_size = 80000 
+nofraud_need, fraud_need = np.ceil(new_df_size*current_ratio).astype(int) 
+df_nofraud = df[df['isFraud'] == 'No Fraud'].sample(nofraud_need) df_fraud = df[df['isFraud'] == 'Fraud'].sample(fraud_need) df_new = pd.concat([df_nofraud, df_fraud], ignore_index=True) df_new.head() 
+X_new = df_new.drop('isFraud', axis=1) y_new = df_new.isFraud 
+# X = df.drop('isFraud', axis=1).iloc[:80000] 
+# y = df.isFraud.iloc[:80000] 
+y_new.value_counts() 
+X_train,X_out,y_train,y_out=train_test_split(X_new,y_new,test_size=0.3,random_state=42)X_val,X_test,y_val,y_test=train_test_split(X_out,y_out, test_size=0.5, random_state=42) 
+from sklearn.tree import DecisionTreeClassifier 
+dtree = DecisionTreeClassifier() 
+from sklearn.model_selection import GridSearchCV 
+param_grid = {'criterion': ['gini', 'entropy', 'log_loss'], 
+'max_depth': [3, 4, 5, 6, 7, 8, 9, 10], 
+'max_features': [2, 3, 8, 'sqrt', 'log2']} 
+from sklearn.metrics import f1_score, make_scorer 
+# Define a custom scorer 
+f1_scorer = make_scorer(f1_score, pos_label='Fraud') 
+# from sklearn.metrics import SCORERS 
+# print(SCORERS.keys()) 
+dtree_grid=GridSearchCV(estimator=dtree,param_grid=param_grid,n_jobs=-1,cv=5, scoring=f1_scorer, error_score="raise") 
+dtree_grid.fit(X_train, y_train) 
+dtree_grid.best_estimator_ 
+dtree_grid.best_params_ 
+dtree_grid.best_score_ 
+dtree_pred = dtree_grid.predict(X_val) 
+from sklearn.metrics import classification_report, ConfusionMatrixDisplay, confusion_matrix, precision_recall_curve, roc_curve, roc_auc_score 
+precision,recall,thresholds=precision_recall_curve(y_val, 
+dtree_grid.best_estimator_.predict_proba(X_val)[:, 0], pos_label='Fraud') 
+# find threshold closest to zero close_zero = np.argmin(np.abs(thresholds)) 
+plt.plot(precision[close_zero],recall[close_zero],'o',markersize=10,label="thresholdzero", fillstyle="none", c='k', mew=2) plt.plot(precision, recall, label="precision recall curve") plt.title('Precision Recall Curve: DecisionTreeClassifier') plt.xlabel("Precision") plt.ylabel("Recall") 
+plt.legend(loc='best') 
+
+fpr, tpr, thresholds = roc_curve(y_val, dtree_grid.best_estimator_.predict_proba(X_val)[:, 0], pos_label='Fraud') 
+plt.title('ROC Curve: DecisionTreeClassifier') 
+plt.plot(fpr, tpr, label="ROC Curve") 
+plt.xlabel("FPR") 
+plt.ylabel("TPR (recall)") 
+# find threshold closest to zero 
+close_zero = np.argmin(np.abs(thresholds)) 
+plt.plot(fpr[close_zero],tpr[close_zero],'o',markersize=10,label="thresholdzero",fillstyle="none", c='k', mew=2) 
+plt.legend(loc=4) 
+print('AUCofDecisionTree:',roc_auc_score(y_val, dtree_grid.best_estimator_.predict_proba(X_val)[:, 1]))
+print('Decision Tree Classifier: Confusion Matrix') 
+ConfusionMatrixDisplay(confusion_matrix=confusion_matrix(y_val,dtree_pred), display_labels=dtree_grid.classes_).plot(); 
+print(f"ClassificationReportDecisionTreeClassifier:\n{classification_report(y_val,dtree_pred)}) 
+
+from sklearn.ensemble import RandomForestClassifier
+rf = RandomForestClassifier()
+rf_params = {'n_estimators': [10, 20, 40, 80, 100, 160],
+             'criterion': ['gini', 'entropy', 'log_loss'],
+             'max_depth': [2, 3, 5, 8, 10, 12],
+             'max_features': [2, 3, 5, 8, 'sqrt', 'log2'] }
+rf_grid = GridSearchCV(estimator=rf,param_grid=rf_params,n_jobs=-1,cv=5,
+          scoring=f1_scorer,error_score="raise")
+rf_grid.fit(X_train, y_train)
+rf_grid.best_estimator_
+rf_grid.best_params_
+rf_grid.best_score_
+rf_pred  = rf_grid.predict(X_val)
+rf_precision, rf_recall, rf_thresholds = precision_recall_curve(y_val, rf_grid.best_estimator_.predict_proba(X_val)[:, 0], pos_label='Fraud')
+# find threshold closest to zero
+rf_close_zero = np.argmin(np.abs(rf_thresholds))
+plt.plot(rf_precision[rf_close_zero], rf_recall[rf_close_zero], 'o', markersize=10, label="threshold zero", fillstyle="none", c='k', mew=2)
+plt.plot(rf_precision, rf_recall, label="precision recall curve")
+plt.title('Precision Recall Curve: RandomForestClassifier')
+plt.xlabel("Precision")
+plt.ylabel("Recall")
+plt.legend(loc='best')
+rf_fpr, rf_tpr, thresholds_rf = roc_curve(y_val, rf_grid.best_estimator_.predict_proba(X_val)
+[:, 0], pos_label='Fraud')
+plt.plot(rf_fpr, rf_tpr, label="ROC Curve")
+plt.title('ROC Curve: RandomForestClassifier')
+plt.xlabel("FPR")
+plt.ylabel("TPR (recall)")
+# find threshold closest to zero
+close_zero_rf = np.argmin(np.abs(thresholds_rf))
+plt.plot(rf_fpr[close_zero_rf], rf_tpr[close_zero_rf], 'o', markersize=10, label="threshold zero", fillstyle="none", c='k', mew=2)
+plt.legend(loc=4)
+print('AUC of Random Forest: ', roc_auc_score(y_val, rf_grid.best_estimator_.predict_proba(X_val)[:, 1]))
+print('Random Forest Classifier: Confusion Matrix')
+ConfusionMatrixDisplay(confusion_matrix=confusion_matrix(y_val, rf_pred), display_labels=rf_grid.classes_).plot();
+print(f"Classification Report Random Forest Classifier:\n{classification_report(y_val, rf_pred)}")
+
+
+
